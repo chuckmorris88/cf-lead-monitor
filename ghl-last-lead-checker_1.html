@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChurchFuel · Last Lead Checker</title>
+<title>ChurchFuel · GHL Last Lead Checker</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
@@ -237,7 +237,7 @@ tbody td { padding: 13px 14px; font-size: 13px; vertical-align: middle; }
 <!-- SETUP -->
 <div class="setup">
   <div class="setup-title">Pull last lead received date for every GHL subaccount</div>
-  <div style="font-size:11px;color:var(--muted);margin-top:-8px;width:100%">Tip: If it spins without finishing, open Chrome DevTools (F12) → Console to see the exact error.</div>
+  <div style="font-size:11px;color:var(--muted);margin-top:-8px;width:100%">⚠️ Must be hosted on GitHub Pages — does not work as a local file due to browser security restrictions.</div>
   <div class="field field-api">
     <label>GHL Agency API Key</label>
     <input type="password" id="apiKey" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9…">
@@ -436,45 +436,28 @@ async function getLastContact(locationId, apiKey) {
   return (data.contacts || [])[0] || null;
 }
 
-// CORS proxies tried in order
-const PROXIES = [
-  u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  u => `https://proxy.cors.sh/${u}`,
-];
-let workingProxyIdx = 0;
-
 async function ghlFetch(url, apiKey, attempt = 0) {
-  const proxyFn = PROXIES[workingProxyIdx] || PROXIES[0];
-  const proxiedUrl = proxyFn(url);
-
   let res;
   try {
-    res = await fetch(proxiedUrl, {
+    res = await fetch(url, {
       headers: {
         'Authorization': 'Bearer ' + apiKey,
         'Content-Type': 'application/json',
-        'x-requested-with': 'XMLHttpRequest'
+        'Version': '2021-07-28'
       }
     });
   } catch(networkErr) {
-    if (workingProxyIdx < PROXIES.length - 1) {
-      workingProxyIdx++;
-      console.warn('Proxy failed, trying next proxy...');
-      return ghlFetch(url, apiKey, attempt);
-    }
-    throw new Error('All CORS proxies failed. Try hosting the file on a web server instead of opening locally.');
+    throw new Error('Network error — make sure this page is hosted on GitHub Pages, not opened as a local file. (' + networkErr.message + ')');
   }
 
   if (res.status === 429) {
-    await sleep(2000 + attempt * 1000);
+    // Rate limited — back off and retry up to 4 times
+    const wait = 2000 + attempt * 1500;
+    await sleep(wait);
     if (attempt < 4) return ghlFetch(url, apiKey, attempt + 1);
-    throw new Error('GHL rate limit hit too many times.');
+    throw new Error('GHL rate limit — too many retries. Try running again in a few minutes.');
   }
-  if (res.status === 403 && workingProxyIdx < PROXIES.length - 1) {
-    workingProxyIdx++;
-    return ghlFetch(url, apiKey, attempt);
-  }
+  if (res.status === 401) throw new Error('Invalid API key — check your GHL Agency API key and try again.');
   if (!res.ok) {
     const txt = await res.text();
     throw new Error(`GHL ${res.status}: ${txt.slice(0,120)}`);
